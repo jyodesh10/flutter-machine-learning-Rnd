@@ -1,0 +1,75 @@
+import numpy as np
+import tensorflow as tf
+import cv2
+
+# Download a pre-trained model from TensorFlow Model Zoo.
+MODEL_NAME = "ssd_inception_v2_coco_2017_11_17"  # You can change this to a model suitable for your use case.
+MODEL_FILE = MODEL_NAME + '.tar.gz'
+DOWNLOAD_BASE = 'http://download.tensorflow.org/models/object_detection/'
+PATH_TO_CKPT = MODEL_NAME + '/frozen_inference_graph.pb'
+
+# Load the pre-trained model graph.
+tf.keras.utils.get_file(MODEL_FILE, DOWNLOAD_BASE + MODEL_FILE, cache_subdir='./')
+detection_graph = tf.Graph()
+with detection_graph.as_default():
+    od_graph_def = tf.GraphDef()
+    with tf.gfile.GFile(PATH_TO_CKPT, 'rb') as fid:
+        serialized_graph = fid.read()
+        od_graph_def.ParseFromString(serialized_graph)
+        tf.import_graph_def(od_graph_def, name='')
+
+# Load label map for the classes (you might need to modify this according to your use case).
+LABELS_PATH = 'path_to_label_map.pbtxt'  # Modify this to the path of your label map.
+NUM_CLASSES = 1  # Change this to the number of classes you are detecting.
+
+# Load label map
+label_map = label_map_util.load_labelmap(LABELS_PATH)
+categories = label_map_util.convert_label_map_to_categories(label_map, max_num_classes=NUM_CLASSES, use_display_name=True)
+category_index = label_map_util.create_category_index(categories)
+
+# Initialize the TensorFlow session.
+with detection_graph.as_default():
+    with tf.Session(graph=detection_graph) as sess:
+        # Read your image or video frames here.
+        # For each frame/image:
+        # image = cv2.imread('your_image.jpg')
+
+        # Define input and output tensors for detection.
+        image_tensor = detection_graph.get_tensor_by_name('image_tensor:0')
+        detection_boxes = detection_graph.get_tensor_by_name('detection_boxes:0')
+        detection_scores = detection_graph.get_tensor_by_name('detection_scores:0')
+        detection_classes = detection_graph.get_tensor_by_name('detection_classes:0')
+        num_detections = detection_graph.get_tensor_by_name('num_detections:0')
+
+        # Perform object detection.
+        image_expanded = np.expand_dims(image, axis=0)
+        (boxes, scores, classes, num) = sess.run(
+            [detection_boxes, detection_scores, detection_classes, num_detections],
+            feed_dict={image_tensor: image_expanded}
+        )
+
+        # You can set a score threshold to filter out low-confidence detections.
+        score_threshold = 0.5
+        boxes = np.squeeze(boxes)
+        scores = np.squeeze(scores)
+        classes = np.squeeze(classes).astype(np.int32)
+
+        # Iterate through detections and draw bounding boxes.
+        for i in range(len(boxes)):
+            if scores[i] > score_threshold:
+                box = tuple(boxes[i].tolist())
+                class_name = category_index[classes[i]]['name']
+                ymin, xmin, ymax, xmax = box
+                xmin = int(xmin * image.shape[1])
+                xmax = int(xmax * image.shape[1])
+                ymin = int(ymin * image.shape[0])
+                ymax = int(ymax * image.shape[0])
+
+                # Draw bounding box on the image.
+                cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
+                cv2.putText(image, class_name, (xmin, ymin - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+        # Display or save the image with bounding boxes.
+        cv2.imshow('Utility Pole Detection', image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
